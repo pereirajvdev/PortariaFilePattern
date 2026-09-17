@@ -18,19 +18,19 @@ def normalizar_arquivo(caminho: Path) -> str | None:
     nome_original = caminho.stem
 
     # Identifica e remove o prefixo do arquivo
-    resultado_prefixo = re.match(
-        r"^\s*(PA|CAT)\s*[-–—]?\s*",
+    resultado_portaria = re.match(
+        r"^\s*(Portaria\s+n[ºo°]?\s*\d+\s*-\s*\d{4})\s*-\s*([^-]+?)\s*-\s*(.*)$",
         nome_original,
         flags=re.IGNORECASE
     )
 
-    if resultado_prefixo is None:
-        print(f"[AVISO] Prefixo não identificado: {caminho.name}")
+    if resultado_portaria is None:
+        log_warning(f"Portaria não identificada: {caminho.name}")
         return None
 
-    prefixo = resultado_prefixo.group(1).upper()
-
-    texto = nome_original[resultado_prefixo.end():]
+    portaria = resultado_portaria.group(1)
+    tipo = resultado_portaria.group(2).strip().upper()
+    texto = resultado_portaria.group(3).strip()
 
     # Substitui underscore por hífen    
     texto = texto.replace("_", "-")
@@ -102,6 +102,6 @@ def normalizar_arquivo(caminho: Path) -> str | None:
     periodo = formatar_periodo(inicio, fim)
 
     if eh_contrato:
-        return f"{prefixo} - {nome} - {setor} - {periodo} - CONTRATO.pdf"
+        return f"{portaria} - {tipo} - {nome} - {setor} - {periodo} - CONTRATO.pdf"
 
-    return f"{prefixo} - {nome} - {setor} - {periodo}.pdf"
+    return f"{portaria} - {tipo} - {nome} - {setor} - {periodo}.pdf"
