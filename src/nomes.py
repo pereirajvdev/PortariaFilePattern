@@ -7,4 +7,4 @@ def normalizar_nome(nome: str) -> str:
 
     nome = re.sub(r"\s+", " ", nome).strip()
 
-    return nome.upper()
+    return " ".join(parte.capitalize() for parte in nome.split())

@@ -10,6 +10,17 @@ from datas import (
     extrair_periodo,
 )
 
+TIPOS_PORTARIA = {
+    "LDPF",
+    "LTS",
+    "LP",
+    "AP",
+    "L Luto",
+    "READAPT",
+    "L CAT",
+    "LG"
+}
+
 def normalizar_arquivo(caminho: Path) -> str | None:
     """
     Recebe o caminho de um PDF e tenta gerar o novo nome.
@@ -19,7 +30,7 @@ def normalizar_arquivo(caminho: Path) -> str | None:
 
     # Identifica e remove o prefixo do arquivo
     resultado_portaria = re.match(
-        r"^\s*(Portaria\s+n[ºo°]?\s*\d+\s*-\s*\d{4})\s*-\s*([^-]+?)\s*-\s*(.*)$",
+        r"^\s*(Portaria\s+n[ºo°]?\s*\d+\s*-\s*\d{4})\s*-\s*(.*)$",
         nome_original,
         flags=re.IGNORECASE
     )
@@ -28,12 +39,53 @@ def normalizar_arquivo(caminho: Path) -> str | None:
         log_warning(f"Portaria não identificada: {caminho.name}")
         return None
 
-    portaria = resultado_portaria.group(1)
-    tipo = resultado_portaria.group(2).strip().upper()
-    texto = resultado_portaria.group(3).strip()
+    portaria = resultado_portaria.group(1).strip()
+    texto = resultado_portaria.group(2).strip()
+
+    tipo_encontrado = None
+    texto_restante = None
+
+    for tipo in sorted(TIPOS_PORTARIA, key=len, reverse=True):
+
+        # Permite variações de espaços no tipo.
+        # Ex.: "AP" e "A P" são equivalentes.
+        if tipo == "AP":
+            padrao_tipo = r"A\s*P"
+        else:
+            partes_tipo = tipo.split()
+            padrao_tipo = r"\s*".join(map(re.escape, partes_tipo))
+
+        resultado_tipo = re.match(
+            rf"^\s*{padrao_tipo}(?=\s|$|-)",
+            texto,
+            flags=re.IGNORECASE
+        )
+
+        if resultado_tipo:
+            tipo_encontrado = tipo
+            texto_restante = texto[resultado_tipo.end():].lstrip(" -")
+
+            # Remove o tipo caso ele apareça novamente no início do texto.
+            padrao_tipo_repetido = re.match(
+                r"^\s*" + re.escape(tipo_encontrado) + r"(?=\s|$|-)",
+                texto_restante,
+                flags=re.IGNORECASE
+            )
+
+            if padrao_tipo_repetido:
+                texto_restante = texto_restante[padrao_tipo_repetido.end():].lstrip(" -")
+            break
+
+    if tipo_encontrado is None:
+        log_warning(
+            f"Tipo de portaria não identificado: {caminho.name}"
+        )
+        return None
+
+    tipo = tipo_encontrado.upper()
 
     # Substitui underscore por hífen    
-    texto = texto.replace("_", "-")
+    texto = texto_restante.replace("_", "-")
 
     # Identifica a marcação de contrato
     eh_contrato = bool(
@@ -55,15 +107,14 @@ def normalizar_arquivo(caminho: Path) -> str | None:
     resultado_periodo = extrair_periodo(texto)
 
     if resultado_periodo is None:
-        log_warning(
-            f"Não foi possível identificar o período: {caminho.name}"
-        )
-        return None
+        inicio = None
+        fim = None
+        texto_sem_periodo = texto
+    else:
+        inicio, fim, inicio_pos, fim_pos = resultado_periodo
 
-    inicio, fim, inicio_pos, fim_pos = resultado_periodo
-
-    # Remove exatamente o período encontrado
-    texto_sem_periodo = texto[:inicio_pos] + texto[fim_pos:]
+        # Remove exatamente o período encontrado
+        texto_sem_periodo = texto[:inicio_pos] + texto[fim_pos:]
 
     # Limpa separadores duplicados
     texto_sem_periodo = re.sub(
@@ -97,11 +148,16 @@ def normalizar_arquivo(caminho: Path) -> str | None:
     nome = normalizar_nome(nome)
     setor = setor.upper().strip()
     
-    inicio, fim = completar_periodo(inicio, fim)
+    if inicio is not None:
+        inicio, fim = completar_periodo(inicio, fim)
+        periodo = formatar_periodo(inicio, fim)
 
-    periodo = formatar_periodo(inicio, fim)
+        if eh_contrato:
+            return f"{portaria} - {tipo} - {nome} - {setor} - {periodo} - CONTRATO.pdf"
+
+        return f"{portaria} - {tipo} - {nome} - {setor} - {periodo}.pdf"
 
     if eh_contrato:
-        return f"{portaria} - {tipo} - {nome} - {setor} - {periodo} - CONTRATO.pdf"
+        return f"{portaria} - {tipo} - {nome} - {setor} - CONTRATO.pdf"
 
-    return f"{portaria} - {tipo} - {nome} - {setor} - {periodo}.pdf"
+    return f"{portaria} - {tipo} - {nome} - {setor}.pdf"
